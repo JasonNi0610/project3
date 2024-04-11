@@ -16,17 +16,71 @@ object main{
   Logger.getLogger("org.apache.spark").setLevel(Level.WARN)
   Logger.getLogger("org.spark-project").setLevel(Level.WARN)
 
-  def LubyMIS(g_in: Graph[Int, Int]): Graph[Int, Int] = {
-    while (remaining_vertices >= 1) {
-        // To Implement
+def LubyMIS(g_in: Graph[Int, Int]): Graph[Int, Int] = {
+  var g = g_in.mapVertices((_, _) => (scala.util.Random.nextDouble(), -1))
+  
+  var activeVertices = g.vertices.filter(_._2._2 == -1).count()
+  
+  var iterations = 0
+  val startTimeMillis = System.currentTimeMillis()
+
+  while (activeVertices > 0) {
+    iterations += 1 // Increment the iteration counter
+    
+    g = g.mapVertices((_, attr) => (scala.util.Random.nextDouble(), attr._2))
+
+    val messages = g.aggregateMessages[Double](
+      triplet => {
+        triplet.sendToDst(triplet.srcAttr._1)
+        triplet.sendToSrc(triplet.dstAttr._1)
+      },
+      (a, b) => math.max(a, b) // Keep only the maximum random value received
+    )
+
+    g = g.outerJoinVertices(messages) {
+      case (vid, (rnd, status), Some(maxNeighborRnd)) =>
+        if (status == -1) {
+          if (rnd > maxNeighborRnd) {
+            (rnd, 1)
+          } else {
+            (rnd, 0)
+          }
+        } else {
+          (rnd, status)
+        }
+      case (vid, (rnd, status), None) =>
+        (rnd, 1)
     }
+    activeVertices = g.vertices.filter(_._2._2 == -1).count()
   }
+  
+  val endTimeMillis = System.currentTimeMillis()
+  val durationSeconds = (endTimeMillis - startTimeMillis) / 1000.0
+  println(s"LubyMIS completed in $durationSeconds seconds over $iterations iterations.")
 
+  g.mapVertices((_, attr) => attr._2)
+}
 
-  def verifyMIS(g_in: Graph[Int, Int]): Boolean = {
-    // To Implement
-  }
+def verifyMIS(g: Graph[Int, Int]): Boolean = {
+  val independent = g.triplets.flatMap { triplet =>
+    if ((triplet.srcAttr == 1 && triplet.dstAttr == 1)) {
+      Some((triplet.srcId, triplet.dstId))
+    } else None
+  }.count() == 0
 
+  val maximal = g.vertices.leftOuterJoin(g.aggregateMessages[Int](
+    triplet => {
+      if (triplet.srcAttr == 1) triplet.sendToDst(1)
+      if (triplet.dstAttr == 1) triplet.sendToSrc(1)
+    },
+    (a, b) => a + b
+  )).map {
+    case (id, (label, Some(count))) => label != -1 || count > 0
+    case (id, (label, None)) => label != -1
+  }.reduce(_ && _)
+
+  independent && maximal
+}
 
   def main(args: Array[String]) {
 
