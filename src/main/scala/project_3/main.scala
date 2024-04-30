@@ -20,30 +20,30 @@ def LubyMIS(g_in: Graph[Int, Int]): Graph[Int, Int] = {
   var g = g_in.mapVertices((_, _) => (scala.util.Random.nextDouble(), -1))
   
   var activeVertices = g.vertices.filter(_._2._2 == -1).count()
-  
   var iterations = 0
   val startTimeMillis = System.currentTimeMillis()
 
   while (activeVertices > 0) {
-    iterations += 1 // Increment the iteration counter
-    
+    iterations += 1
+
     g = g.mapVertices((_, attr) => (scala.util.Random.nextDouble(), attr._2))
 
-    val messages = g.aggregateMessages[Double](
+    // Aggregate messages to find the maximum random value from each vertex's neighbors
+    val maxNeighborRndMessages = g.aggregateMessages[Double](
       triplet => {
         triplet.sendToDst(triplet.srcAttr._1)
         triplet.sendToSrc(triplet.dstAttr._1)
       },
-      (a, b) => math.max(a, b) // Keep only the maximum random value received
+      (a, b) => math.max(a, b)
     )
 
-    g = g.outerJoinVertices(messages) {
+    g = g.outerJoinVertices(maxNeighborRndMessages) {
       case (vid, (rnd, status), Some(maxNeighborRnd)) =>
         if (status == -1) {
           if (rnd > maxNeighborRnd) {
-            (rnd, 1)
+            (rnd, 1) // Mark vertex as part of the MIS
           } else {
-            (rnd, 0)
+            (rnd, 0) // Mark vertex as not part of the MIS
           }
         } else {
           (rnd, status)
@@ -51,9 +51,29 @@ def LubyMIS(g_in: Graph[Int, Int]): Graph[Int, Int] = {
       case (vid, (rnd, status), None) =>
         (rnd, 1)
     }
+
+    val neighborsInMIS = g.aggregateMessages[Int](
+      triplet => {
+        if (triplet.srcAttr._2 == 1) triplet.sendToDst(1)
+        if (triplet.dstAttr._2 == 1) triplet.sendToSrc(1)
+      },
+      (a, b) => a + b
+    )
+
+    g = g.outerJoinVertices(neighborsInMIS) {
+      case (vid, (rnd, status), Some(count)) =>
+        if (status == 0 && count > 0) {
+          (rnd, 0) // Remove vertex
+        } else {
+          (rnd, status)
+        }
+      case (vid, (rnd, status), None) =>
+        (rnd, status)
+    }
+
     activeVertices = g.vertices.filter(_._2._2 == -1).count()
   }
-  
+
   val endTimeMillis = System.currentTimeMillis()
   val durationSeconds = (endTimeMillis - startTimeMillis) / 1000.0
   println(s"LubyMIS completed in $durationSeconds seconds over $iterations iterations.")
@@ -135,3 +155,6 @@ def verifyMIS(g: Graph[Int, Int]): Boolean = {
     }
   }
 }
+
+
+//edges
