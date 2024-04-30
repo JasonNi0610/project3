@@ -26,6 +26,7 @@ def LubyMIS(g_in: Graph[Int, Int]): Graph[Int, Int] = {
   while (activeVertices > 0) {
     iterations += 1
 
+    // Update vertices with new random values
     g = g.mapVertices((_, attr) => (scala.util.Random.nextDouble(), attr._2))
 
     // Aggregate messages to find the maximum random value from each vertex's neighbors
@@ -52,6 +53,7 @@ def LubyMIS(g_in: Graph[Int, Int]): Graph[Int, Int] = {
         (rnd, 1)
     }
 
+    // Aggregate to check if neighbors should be removed
     val neighborsInMIS = g.aggregateMessages[Int](
       triplet => {
         if (triplet.srcAttr._2 == 1) triplet.sendToDst(1)
@@ -155,6 +157,3 @@ def verifyMIS(g: Graph[Int, Int]): Boolean = {
     }
   }
 }
-
-
-//edges
